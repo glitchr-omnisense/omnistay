@@ -1,7 +1,19 @@
 {
     "name": "omnisense/omnistay",
     "type": "library",
-    "description": "Reserved, not released yet: Omnistay, where to stay and what to book for a trip under any PHP host - availability and prices, booking and cancelling (lodging, car hire, packages).",
+    "description": "Omnistay: where to stay and what to book for a trip, under any PHP host, whoever sells it - hotels and homes rented by their owners searched through one interface, a property's availability, nightly rates, fees, taxes and cancellation policy, offers re-priced, bookings made and cancelled, a property's description and calendar; car hire and packages as shared models. Providers are packages of their own (omnistay/amadeus for hotels, omnistay/local for a site's own listings).",
+    "keywords": [
+        "hotel",
+        "booking",
+        "reservation",
+        "rental",
+        "vacation-rental",
+        "availability",
+        "rates",
+        "amadeus",
+        "framework-agnostic",
+        "omnistay"
+    ],
     "homepage": "https://github.com/glitchr-omnisense/omnistay",
     "license": "MIT",
     "authors": [
@@ -10,11 +22,41 @@
         }
     ],
     "require": {
-        "php": ">=8.2"
+        "php": ">=8.2",
+        "ext-mbstring": "*",
+        "symfony/http-client-contracts": "^3.0"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^11.0",
+        "symfony/http-client": "^6.4|^7.0|^8.0"
+    },
+    "suggest": {
+        "omnistay/amadeus": "Hotels through Amadeus' hotel APIs: a city's or a point's hotels, their offers, an offer re-priced, a booking (a client id and secret)",
+        "omnistay/local": "A site's own listings as a provider: homes rented by their hosts, their calendar, seasonal prices, minimum stays, bookings held without double booking",
+        "omnisense/omnibridge": "The host contracts; omnibridge/symfony and omnibridge/laravel wire omnistay into their host when a site needs it"
+    },
+    "autoload": {
+        "psr-4": {
+            "Omnistay\\": ""
+        },
+        "exclude-from-classmap": [
+            "/Tests/",
+            "/docker/",
+            "/bin/"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Omnistay\\Tests\\": "Tests/"
+        }
     },
     "extra": {
         "branch-alias": {
             "dev-1.x": "1.x-dev"
         }
+    },
+    "config": {
+        "sort-packages": true
     }
 }

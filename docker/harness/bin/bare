@@ -1,0 +1,87 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * Omnistay in plain PHP: no bundle, no container, no framework. A registry
+ * of two providers - hotels and homes, one fixed factory answering for
+ * both -, one search over both, a property's availability and calendar,
+ * an offer booked, the same nights refused to a second guest, the booking
+ * cancelled and the nights free again; then a provider's JSON call answered
+ * with no network (a record, a 404, an error whose message keeps the key
+ * out). Prints what happened and every class and file PHP loaded, as JSON.
+ */
+
+use Omnistay\Exception\ProviderException;
+use Omnistay\Exception\UnavailableException;
+use Omnistay\Http\JsonClient;
+use Omnistay\Model\Amenity;
+use Omnistay\Model\BookingRequest;
+use Omnistay\Model\Guests;
+use Omnistay\Model\Location;
+use Omnistay\Model\Money;
+use Omnistay\Model\Property;
+use Omnistay\Model\PropertyKind;
+use Omnistay\Model\PropertyRef;
+use Omnistay\Model\SearchResult;
+use Omnistay\Model\Stay;
+use Omnistay\Model\StayQuery;
+use Omnistay\Model\Traveller;
+use Omnistay\Registry;
+use Omnistay\Testing\FixedProviderFactory;
+use Omnistay\Testing\RecordedHttpClient;
+
+require getenv('OMNISTAY_AUTOLOAD') ?: '/harness/vendor/autoload.php';
+
+$lake = new Location(45.8992, 6.1294, ['1 quai Example'], 'Annecy', '74000', 'FR', area: 'Vieille ville');
+$properties = [
+    new Property(new PropertyRef('hotels', 'H-LAC'), 'Hôtel du Lac Example', PropertyKind::Hotel, $lake, stars: 3, amenities: [Amenity::Wifi, Amenity::Breakfast]),
+    new Property(new PropertyRef('homes', 'L-17'), 'Cabane des Tilleuls', PropertyKind::Cabin, new Location(45.91, 6.14, city: 'Annecy', countryCode: 'FR', exact: false), amenities: [Amenity::Wifi, Amenity::Kitchen], maxGuests: 4, rating: 4.8, reviews: 12, host: 'Inès'),
+];
+$registry = new Registry([new FixedProviderFactory($properties, ['H-LAC' => Money::of(14000, 'EUR'), 'L-17' => Money::of(9500, 'EUR')], ['L-17' => ['2026-12-24']])], [
+    'hotels' => ['factory' => 'fixed'],
+    'homes' => ['factory' => 'fixed'],
+]);
+
+$stay = Stay::of('2026-12-18', '2026-12-21');
+$guests = new Guests(2);
+$results = $registry->searchAll(new StayQuery($stay, $guests, place: 'annecy'));
+$report['capabilities'] = $registry->get('homes')->capabilities()->toArray();
+$report['search'] = array_map(static fn (SearchResult $r) => [(string) $r->property->ref, $r->property->kind->value, $r->total?->decimal(), $r->nightly()?->decimal()], $results->items);
+$report['asked'] = $results->asked;
+
+$availability = $registry->availabilityOf(new PropertyRef('homes', 'L-17'), $stay, $guests);
+$offer = $availability->cheapest();
+$report['offer'] = [$availability->available, $offer?->id, $offer?->total()->decimal(), count($offer->rate->nights ?? [])];
+$report['blocked'] = $registry->availabilityOf(new PropertyRef('homes', 'L-17'), Stay::of('2026-12-23', '2026-12-26'), $guests)->reason;
+
+$booking = $registry->bookOffer(new BookingRequest($offer, [new Traveller('Alice', 'Example', 'alice@example.org')], clientReference: 'S-1'));
+$report['booking'] = [$booking->reference, $booking->status->value, (string) $booking->stay];
+try {
+    $registry->bookOffer(new BookingRequest($offer, [new Traveller('Bob', 'Example')]));
+    $report['second'] = 'booked twice';
+} catch (UnavailableException $e) {
+    $report['second'] = $e->reason;
+}
+$report['calendar'] = array_map(static fn ($day) => [$day->date->format('m-d'), $day->available, $day->reason], $registry->calendar('homes')->calendar(new PropertyRef('homes', 'L-17'), new DateTimeImmutable('2026-12-20'), new DateTimeImmutable('2026-12-25')));
+$report['cancelled'] = $registry->cancel('homes')->cancel($booking->reference)->status->value;
+$report['free-again'] = $registry->availabilityOf(new PropertyRef('homes', 'L-17'), $stay, $guests)->available;
+
+$http = RecordedHttpClient::routes([
+    '~^GET https://api\.example\.org/hotels/1~' => [200, '{"name": "Hôtel du Lac Example", "geoCode": {"latitude": 45.8992}, "amenities": [{"code": "WIFI"}, "not an object"]}'],
+    '~^GET https://api\.example\.org/hotels/3~' => [500, '<h1>Internal error</h1>'],
+]);
+$json = new JsonClient($http, 'Example', ['User-Agent' => 'omnistay-bare/1.0']);
+$data = $json->get('https://api.example.org/hotels/1', ['key' => 'not-a-real-key']);
+$report['json'] = [$data?->string('name'), $data?->float('geoCode.latitude'), $data?->strings('amenities', 'code'), $http->header('User-Agent')];
+$report['json-404'] = $json->get('https://api.example.org/hotels/2');
+try {
+    $json->get('https://api.example.org/hotels/3', ['key' => 'not-a-real-key']);
+} catch (ProviderException $e) {
+    $report['json-error'] = $e->getMessage();
+}
+
+echo json_encode($report + ['loaded' => [
+    'symbols' => [...get_declared_classes(), ...get_declared_interfaces(), ...get_declared_traits()],
+    'files' => array_map('realpath', get_included_files()),
+    'eager' => array_map('realpath', array_values(is_file($f = dirname((string) (new ReflectionClass(Composer\Autoload\ClassLoader::class))->getFileName()).'/autoload_files.php') ? require $f : [])),
+]], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), "\n";
