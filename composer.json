@@ -1,0 +1,20 @@
+{
+    "name": "omnisense/omnistay",
+    "type": "library",
+    "description": "Reserved, not released yet: Omnistay, where to stay and what to book for a trip under any PHP host - availability and prices, booking and cancelling (lodging, car hire, packages).",
+    "homepage": "https://github.com/glitchr-omnisense/omnistay",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Marco Meyer"
+        }
+    ],
+    "require": {
+        "php": ">=8.2"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-1.x": "1.x-dev"
+        }
+    }
+}
