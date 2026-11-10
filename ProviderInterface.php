@@ -8,9 +8,10 @@ namespace Omnistay;
  * Capabilities say what it can be asked: search (SearchInterface), a
  * property's availability and offers (AvailabilityInterface), its
  * calendar (CalendarInterface), a booking (BookInterface), a cancellation
- * (CancelInterface), its description (ContentInterface).
+ * (CancelInterface), its description (ContentInterface) - and its usage
+ * policy: its rate limits, what its terms ask of whoever shows its records.
  */
-interface ProviderInterface
+interface ProviderInterface extends \Omnisense\Contracts\Provider\ProviderInterface
 {
     /** The name it is configured under in the registry ("hotels", "homes"): the provider of every PropertyRef it gives. */
     public function getName(): string;

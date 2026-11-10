@@ -7,6 +7,8 @@
 #
 # Providers come from GitHub (branch 1.x) unless their checkout sits under OMNISTAY_PLUGINS (set it
 # to ../.. in .env when this core sits in the workspace beside them): then that checkout is what runs.
+# omnisense/contracts likewise: its checkout under OMNISENSE_CONTRACTS (../../../omnisense-contracts
+# in .env when it sits beside the family's folder), its tests run with the family's; GitHub otherwise.
 name: omnistay-harness
 
 services:
@@ -24,6 +26,7 @@ services:
     volumes:
       - ..:/omnistay/core
       - ${OMNISTAY_PLUGINS:-./plugins}:/omnistay/plugins:ro
+      - ${OMNISENSE_CONTRACTS:-./contracts}:/omnisense/contracts:ro
       - harness:/harness
 
 volumes:

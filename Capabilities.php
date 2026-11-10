@@ -2,17 +2,40 @@
 
 namespace Omnistay;
 
+use Omnisense\Contracts\Policy\UsagePolicy;
+use Omnisense\Contracts\Provider\CapabilitiesInterface;
 use Omnistay\Model\PropertyKind;
 use Omnistay\Model\StayQuery;
 
 /**
  * What a provider is, said before it is asked anything: the contracts it
  * answers, how it reads a place, the kinds of property it holds, whether
- * its search prices the stay, and what its terms ask of whoever shows its
- * records.
+ * its search prices the stay, and its usage policy: its rate limits and
+ * what its terms ask of whoever shows its records.
+ *
+ * The policy is omnisense/contracts' UsagePolicy. The three fields written
+ * before it ($keyless, $attribution, $terms) stay, read from the policy
+ * when it is given and they are not: a provider that gives them alone gets
+ * a policy made of them, its limits unknown (UsagePolicy::described()).
+ * $sandbox stays omnistay's own.
  */
-final readonly class Capabilities
+final readonly class Capabilities implements CapabilitiesInterface
 {
+    /** @deprecated since 1.x, read policy()->requirements->key */
+    public bool $keyless;
+
+    /** @deprecated since 1.x, read policy()->rights->attribution->text */
+    public ?string $attribution;
+
+    /**
+     * @var list<string>
+     *
+     * @deprecated since 1.x, read policy()->provenance (terms, policy)
+     */
+    public array $terms;
+
+    private UsagePolicy $policy;
+
     /**
      * @param bool               $search       it searches by place (SearchInterface)
      * @param bool               $availability it gives a property's availability and offers (AvailabilityInterface)
@@ -28,6 +51,7 @@ final readonly class Capabilities
      * @param bool               $sandbox      it is configured on a test environment: nothing it books is real
      * @param ?string            $attribution  what its terms ask to be shown beside its records
      * @param list<string>       $terms        the terms whoever runs it must follow (URLs)
+     * @param ?UsagePolicy       $policy       its usage policy; made of $attribution, $terms and $keyless when null
      */
     public function __construct(
         public bool $search = false,
@@ -40,11 +64,21 @@ final readonly class Capabilities
         public array $kinds = [],
         public bool $pricedSearch = false,
         public bool $cardPayment = false,
-        public bool $keyless = false,
+        bool $keyless = false,
         public bool $sandbox = false,
-        public ?string $attribution = null,
-        public array $terms = [],
+        ?string $attribution = null,
+        array $terms = [],
+        ?UsagePolicy $policy = null,
     ) {
+        $this->policy = $policy ?? UsagePolicy::described(UsagePolicy::UNNAMED, $attribution, null, $terms, $keyless);
+        $this->attribution = $attribution ?? $policy?->rights->attribution->text;
+        $this->terms = [] !== $terms || null === $policy ? $terms : array_values(array_unique(array_filter([$policy->provenance->terms, $policy->provenance->policy])));
+        $this->keyless = $keyless || (null !== $policy && !$policy->requirements->key);
+    }
+
+    public function policy(): UsagePolicy
+    {
+        return $this->policy;
     }
 
     /** Whether its search can read the query's place: a text, a city code or a point it reads. */
@@ -84,6 +118,7 @@ final readonly class Capabilities
             'sandbox' => $this->sandbox,
             'attribution' => $this->attribution,
             'terms' => $this->terms,
+            'policy' => $this->policy->toArray(),
         ];
     }
 }

@@ -42,6 +42,31 @@ $booking = $registry->bookOffer(new BookingRequest($offer, [new Traveller('Alice
   (hotels), [omnistay/local](https://github.com/glitchr-omnisense/omnistay-local) (a site's own
   listings).
 
-The core needs no framework: it requires `symfony/http-client-contracts` and nothing else.
+## Usage policies
+
+Each provider declares its usage policy as data (its `policy.json`: rate limits, rights,
+attribution, requirements, where and when it was read), and every call through `search()`,
+`availability()`, `calendar()`, `book()`, `cancel()` or `content()` - and through `searchAll()`,
+`availabilityOf()`, `propertyOf()`, `bookOffer()` - is held to it: checked before, counted after,
+refused with `UsageLimitReachedException` once a limit is reached or while the provider asks to
+wait (a 429 and its `Retry-After`, a `RateLimit` field with nothing left). In `searchAll()`, a
+provider over its limit is one of the failures; the others' answers stand. A site may tighten a
+policy in its configuration, never loosen it:
+
+```php
+'homes' => [
+    'factory' => 'local',
+    'policy' => ['rateLimits' => [['max' => 60, 'window' => 'minute', 'operations' => ['book']]]],
+    'usage' => ['commercial' => true],
+],
+```
+
+`$registry->policy('homes')` gives the policy as the site runs it. Pass a shared
+`RateLimiterInterface` as the registry's third argument when the application runs in many
+processes. See [docs/policies.md](docs/policies.md).
+
+The core needs no framework: it requires `omnisense/contracts` (the kernel every omnisense family
+builds on: provider, factory, registry, JSON client, usage policies, testing kit) and
+`symfony/http-client-contracts`, nothing else.
 
 Manual: [docs/index.md](docs/index.md). License: MIT.

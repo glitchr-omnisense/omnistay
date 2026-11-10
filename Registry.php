@@ -2,6 +2,9 @@
 
 namespace Omnistay;
 
+use Omnisense\Contracts\Policy\RateLimiterInterface;
+use Omnisense\Contracts\Provider\ProviderInterface as BaseProvider;
+use Omnisense\Contracts\Provider\Registry as BaseRegistry;
 use Omnistay\Exception\InvalidConfigException;
 use Omnistay\Exception\NotSupportedException;
 use Omnistay\Exception\OmnistayException;
@@ -15,15 +18,22 @@ use Omnistay\Model\SearchResult;
 use Omnistay\Model\SearchResults;
 use Omnistay\Model\Stay;
 use Omnistay\Model\StayQuery;
+use Omnistay\Policy\GuardedAvailability;
+use Omnistay\Policy\GuardedBook;
+use Omnistay\Policy\GuardedCalendar;
+use Omnistay\Policy\GuardedCancel;
+use Omnistay\Policy\GuardedContent;
+use Omnistay\Policy\GuardedSearch;
 
 /**
  * The application's providers by name, each built once from its factory and
- * options:
+ * options, each call through a contract guarded by the provider's usage
+ * policy:
  *
  *   $registry = new Registry([new AmadeusFactory($http), new LocalFactory($store)], [
  *       'hotels' => ['factory' => 'amadeus', 'options' => ['client_id' => '...', 'client_secret' => '...']],
  *       'homes' => ['factory' => 'local'],
- *   ]);
+ *   ], $limiter);
  *
  *   $registry->searchAll(new StayQuery(Stay::of('2026-12-18', '2026-12-21'), place: 'Annecy'));  // hotels and homes, one list
  *   $registry->availabilityOf($result->property->ref, $stay, $guests);                          // asked to the provider it came from
@@ -31,83 +41,92 @@ use Omnistay\Model\StayQuery;
  *
  * A PropertyRef carries the name of the provider that gave it, so a
  * question about a property goes back to that provider.
+ *
+ * search(), availability(), calendar(), book(), cancel() and content() give
+ * the provider behind its guard (Policy\Guarded*): each call is checked
+ * against the policy's rate limits for its operation - the contract's
+ * method name, "search", "availability", "offer", "calendar", "book",
+ * "booking", "cancel", "property", "properties" - then counted, and refused
+ * with Exception\UsageLimitReachedException (an OmnistayException: in
+ * searchAll(), that provider's failure) once a limit is reached or while
+ * the provider asks to wait; searchAll(), availabilityOf(), propertyOf()
+ * and bookOffer() ask through them too. get() gives the provider itself,
+ * unguarded. "policy" tightens the provider's policy, never loosens it;
+ * "usage" says what the site is (omnisense/contracts' Registry).
  */
-final class Registry
+final class Registry extends BaseRegistry
 {
-    /** @var array<string, ProviderFactoryInterface> */
-    private array $factories = [];
+    /** @var string */
+    public const PREFIX = Config::PREFIX;
 
-    /** @var array<string, ProviderInterface> */
-    private array $providers = [];
+    /** @var array<string, ProviderInterface> the guarded contracts, by "contract name" */
+    private array $guarded = [];
 
     /**
-     * @param iterable<ProviderFactoryInterface>                                     $factories
-     * @param array<string, array{factory: string, options?: array<string, mixed>}> $config
+     * @param iterable<ProviderFactoryInterface>                                                                                         $factories
+     * @param array<string, array{factory: string, options?: array<string, mixed>, policy?: array<string, mixed>, usage?: array<string, mixed>}> $config
+     * @param ?RateLimiterInterface                                                                                                      $limiter   where every provider's calls are counted: an in-memory one by default, a shared one for an application served by many processes
      */
-    public function __construct(iterable $factories, private readonly array $config)
+    public function __construct(iterable $factories, array $config, ?RateLimiterInterface $limiter = null)
     {
-        foreach ($factories as $factory) {
-            $this->factories[$factory->getName()] = $factory;
-        }
+        parent::__construct($factories, $config, $limiter);
     }
 
     public function get(string $name): ProviderInterface
     {
-        return $this->providers[$name] ??= $this->factory($name)->create(['omnistay.name' => $name] + ($this->config[$name]['options'] ?? []));
-    }
+        $provider = parent::get($name);
 
-    public function has(string $name): bool
-    {
-        return isset($this->config[$name]);
+        return $provider instanceof ProviderInterface ? $provider : throw new InvalidConfigException(\sprintf('The "%s" provider (%s) is no omnistay provider.', $name, $provider::class));
     }
 
     public function search(string $name): SearchInterface
     {
-        $provider = $this->get($name);
+        $guarded = $this->guarded['search '.$name] ??= new GuardedSearch($this->provider($name, SearchInterface::class, 'search'), $this->guard($name));
 
-        return $provider instanceof SearchInterface ? $provider : throw NotSupportedException::capability($provider, $name, 'search');
+        return $guarded instanceof SearchInterface ? $guarded : throw new \LogicException('A guarded contract of another kind.');
     }
 
     public function availability(string $name): AvailabilityInterface
     {
-        $provider = $this->get($name);
+        $guarded = $this->guarded['availability '.$name] ??= new GuardedAvailability($this->provider($name, AvailabilityInterface::class, 'give availability'), $this->guard($name));
 
-        return $provider instanceof AvailabilityInterface ? $provider : throw NotSupportedException::capability($provider, $name, 'give availability');
+        return $guarded instanceof AvailabilityInterface ? $guarded : throw new \LogicException('A guarded contract of another kind.');
     }
 
     public function calendar(string $name): CalendarInterface
     {
-        $provider = $this->get($name);
+        $guarded = $this->guarded['calendar '.$name] ??= new GuardedCalendar($this->provider($name, CalendarInterface::class, 'give a calendar'), $this->guard($name));
 
-        return $provider instanceof CalendarInterface ? $provider : throw NotSupportedException::capability($provider, $name, 'give a calendar');
+        return $guarded instanceof CalendarInterface ? $guarded : throw new \LogicException('A guarded contract of another kind.');
     }
 
     public function book(string $name): BookInterface
     {
-        $provider = $this->get($name);
+        $guarded = $this->guarded['book '.$name] ??= new GuardedBook($this->provider($name, BookInterface::class, 'book'), $this->guard($name));
 
-        return $provider instanceof BookInterface ? $provider : throw NotSupportedException::capability($provider, $name, 'book');
+        return $guarded instanceof BookInterface ? $guarded : throw new \LogicException('A guarded contract of another kind.');
     }
 
     public function cancel(string $name): CancelInterface
     {
-        $provider = $this->get($name);
+        $guarded = $this->guarded['cancel '.$name] ??= new GuardedCancel($this->provider($name, CancelInterface::class, 'cancel'), $this->guard($name));
 
-        return $provider instanceof CancelInterface ? $provider : throw NotSupportedException::capability($provider, $name, 'cancel');
+        return $guarded instanceof CancelInterface ? $guarded : throw new \LogicException('A guarded contract of another kind.');
     }
 
     public function content(string $name): ContentInterface
     {
-        $provider = $this->get($name);
+        $guarded = $this->guarded['content '.$name] ??= new GuardedContent($this->provider($name, ContentInterface::class, 'describe properties'), $this->guard($name));
 
-        return $provider instanceof ContentInterface ? $provider : throw NotSupportedException::capability($provider, $name, 'describe properties');
+        return $guarded instanceof ContentInterface ? $guarded : throw new \LogicException('A guarded contract of another kind.');
     }
 
     /**
      * One query asked to every provider that can read its place (or those
      * named), the answers merged: filtered by the query (StayQuery::accepts()),
      * the available first, then the cheapest per night, then by distance.
-     * A provider that fails is named in the failures; the others' answers
+     * Each provider is asked through its guard: one that fails, or whose
+     * usage limit is reached, is named in the failures; the others' answers
      * stand.
      */
     public function searchAll(StayQuery $query, string ...$names): SearchResults
@@ -122,7 +141,7 @@ final class Registry
             }
             $asked[] = $name;
             try {
-                foreach ($provider->search($query)->items as $result) {
+                foreach ($this->search($name)->search($query)->items as $result) {
                     if ($query->accepts($result)) {
                         $items[] = $result;
                     }
@@ -159,28 +178,41 @@ final class Registry
         return $this->book($request->offer->property->provider)->book($request);
     }
 
-    /** @return array<string, mixed> the options a provider is configured with */
-    public function options(string $name): array
+    /**
+     * The configured providers' names, in the configuration's order; those
+     * keeping a contract ("search", "availability", "book"...) when one is
+     * named.
+     *
+     * @return list<string>
+     */
+    public function names(?string $contract = null): array
     {
-        return $this->config[$name]['options'] ?? [];
+        return parent::names($contract);
     }
 
-    /** @return list<string> the configured providers' names */
-    public function names(): array
+    /**
+     * A provider that keeps a contract, or NotSupportedException.
+     *
+     * @template T of object
+     *
+     * @param class-string<T> $contract
+     *
+     * @return T&ProviderInterface
+     */
+    private function provider(string $name, string $contract, string $capability): object
     {
-        return array_keys($this->config);
+        $provider = $this->contract($name, $contract, $capability);
+
+        return $provider instanceof ProviderInterface ? $provider : throw new InvalidConfigException(\sprintf('The "%s" provider (%s) is no omnistay provider.', $name, $provider::class));
     }
 
-    /** @return list<string> the factories installed: what `factory:` may name */
-    public function factories(): array
+    protected function invalid(string $message): \Throwable
     {
-        return array_keys($this->factories);
+        return new InvalidConfigException($message);
     }
 
-    private function factory(string $name): ProviderFactoryInterface
+    protected function notSupported(BaseProvider $provider, string $name, string $capability): \Throwable
     {
-        $provider = $this->config[$name] ?? throw new InvalidConfigException(\sprintf('No "%s" provider; configured: %s.', $name, implode(', ', array_keys($this->config)) ?: 'none'));
-
-        return $this->factories[$provider['factory']] ?? throw new InvalidConfigException(\sprintf('No "%s" factory for the "%s" provider; installed: %s.', $provider['factory'], $name, implode(', ', array_keys($this->factories)) ?: 'none'));
+        return NotSupportedException::capability($provider, $name, $capability);
     }
 }

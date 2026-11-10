@@ -2,7 +2,9 @@
 
 namespace Omnistay\Exception;
 
-/** Every exception omnistay throws. */
-interface OmnistayException extends \Throwable
+use Omnisense\Contracts\Exception\ExceptionInterface;
+
+/** Every exception omnistay throws (and omnisense/contracts' interface, so one catch holds every family's). */
+interface OmnistayException extends ExceptionInterface
 {
 }

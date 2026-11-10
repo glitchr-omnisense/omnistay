@@ -58,6 +58,7 @@ omnitrade gives the payment's reference instead.
 - [Models](models.md): every model and enum.
 - [Searching, pricing and booking](usage.md).
 - [Configuration](configuration.md): the registry's configuration and every provider's options.
+- [Usage policies](policies.md): each provider's rate limits and rights, a site's tightening.
 - [Errors](errors.md).
 - [Testing](testing.md) and [the Docker harness](harness.md).
 - [Writing a provider](providers.md).
