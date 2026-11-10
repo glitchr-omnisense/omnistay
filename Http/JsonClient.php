@@ -2,6 +2,7 @@
 
 namespace Omnistay\Http;
 
+use Omnisense\Contracts\Http\NoRetry;
 use Omnisense\Contracts\Policy\Backoff;
 use Omnistay\Exception\ProviderException;
 use Omnistay\Exception\UnreachableException;
@@ -22,13 +23,20 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * it waits while the provider asked to and reads every response's
  * Retry-After and RateLimit fields: a 429 is a UsageLimitReachedException
  * with the wait asked (omnisense/contracts' JsonClient underneath).
+ *
+ * The client given is kept with its retries off (omnisense/contracts'
+ * Http\NoRetry): Symfony's RetryableHttpClient (framework.http_client's
+ * retry_failed) would send a booking or a cancellation again on a 429, 502
+ * or 503, and a 429 would never reach the provider's Backoff. A test client
+ * (MockHttpClient, RecordedHttpClient) is kept as given.
  */
 final class JsonClient extends \Omnisense\Contracts\Http\JsonClient
 {
     /** @param array<string, string> $headers sent with every request */
     public function __construct(HttpClientInterface $http, string $provider, array $headers = [], ?Backoff $backoff = null)
     {
-        parent::__construct($http, $provider, $headers, $backoff);
+        // Http\NoRetry came with omnisense/contracts 1568f2c: a site whose vendor holds an older one keeps its client as given.
+        parent::__construct(class_exists(NoRetry::class) ? NoRetry::of($http) : $http, $provider, $headers, $backoff);
     }
 
     /**

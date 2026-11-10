@@ -10,6 +10,9 @@ use Omnistay\Testing\RecordedHttpClient;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\HttpClient\Retry\GenericRetryStrategy;
+use Symfony\Component\HttpClient\RetryableHttpClient;
 
 final class JsonClientTest extends TestCase
 {
@@ -148,5 +151,37 @@ final class JsonClientTest extends TestCase
         } finally {
             ini_set('zend.exception_ignore_args', false !== $ignoreArgs ? $ignoreArgs : '1');
         }
+    }
+
+    /**
+     * The application's http_client with retry_failed on: Symfony's RetryableHttpClient would send
+     * the booking again on a 503. The JsonClient keeps its retries off: sent once, the 503 surfaced.
+     */
+    public function testABookingAnswered503IsSentOnceThroughARetryingClient(): void
+    {
+        $sent = [];
+        $answers = [new MockResponse('{"errors":[{"detail":"unavailable"}]}', ['http_code' => 503]), new MockResponse('{"data":{"id":"b1"}}')];
+        $mock = new MockHttpClient(function (string $method, string $url) use (&$sent, &$answers): MockResponse {
+            $sent[] = $method.' '.$url;
+
+            return array_shift($answers) ?? new MockResponse('{}', ['http_code' => 500]);
+        });
+        $client = new JsonClient(new RetryableHttpClient($mock, new GenericRetryStrategy(GenericRetryStrategy::DEFAULT_RETRY_STATUS_CODES, 0), 3), 'Example');
+
+        try {
+            $client->request('POST', 'https://stay.example/v1/bookings', ['json' => ['offer' => 'o1']]);
+            self::fail('a 503');
+        } catch (ProviderException) {
+        }
+        self::assertSame(['POST https://stay.example/v1/bookings'], $sent, 'the 503 was not retried by the client');
+        self::assertCount(1, $answers, 'the second answer was never asked for');
+    }
+
+    public function testAMockHttpClientIsKeptAsGiven(): void
+    {
+        $mock = new MockHttpClient([new MockResponse('{"data":{"id":"b1"}}')]);
+        (new JsonClient($mock, 'Example'))->request('POST', 'https://stay.example/v1/bookings', ['json' => ['offer' => 'o1']]);
+
+        self::assertSame(1, $mock->getRequestsCount());
     }
 }

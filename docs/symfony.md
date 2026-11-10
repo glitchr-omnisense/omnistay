@@ -15,6 +15,9 @@ services:
               homes: { factory: local, options: { service_fee: 12 } }
 ```
 
+The `http_client` service is kept with its retries off (omnisense/contracts' `Http\NoRetry`, in
+`Http\JsonClient`): `retry_failed` never sends a booking twice.
+
 Credentials go by reference (`%env()%`, the secrets vault), never in the file. On an omnibase
 site, `omnibase/booking` registers the registry itself from its `booking.providers` configuration
 and gives `local` its Doctrine store.

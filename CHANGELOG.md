@@ -2,6 +2,12 @@
 
 ## 1.0.0 (unreleased)
 
+- Writes sent once: `Http\JsonClient` keeps the HTTP client it is given with its retries off
+  (omnisense/contracts' `Http\NoRetry`, which omnisense/contracts 1568f2c brings; with an older
+  kernel the client is kept as given), so Symfony's `RetryableHttpClient` (`framework.http_client`'s
+  `retry_failed`) never sends a booking or a cancellation twice, and a 429 reaches the provider's
+  Backoff. A test client is kept as given. docs/policies.md, docs/symfony.md.
+
 - 2026-11-10: on omnisense/contracts, the kernel every family builds on. Config, ProviderInterface,
   ProviderFactoryInterface, ProviderFactory (with "omnistay.name" and name() as before), Registry,
   Http\JsonClient, Data, Redaction, Testing\RecordedHttpClient, RecordedResponse and BareTestCase

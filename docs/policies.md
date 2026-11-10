@@ -23,6 +23,12 @@ A call over a limit is never made: `UsageLimitReachedException` (an `OmnistayExc
 `Retry-After`, a `RateLimit: "...";r=0;t=30` field - holds every following call of that provider
 until the wait is over.
 
+Nothing retries a call, nor the HTTP client: the provider's `JsonClient` keeps the client it is
+given with its retries off (omnisense/contracts' `Http\NoRetry`). Symfony's `RetryableHttpClient`
+(`framework.http_client`'s `retry_failed`) would send a booking or a cancellation again on a 429,
+502 or 503, and the 429 would never reach the provider's wait. A test client is kept as given. It
+needs omnisense/contracts 1568f2c or later; with an older one the client is kept as given.
+
 A limit counts the family's calls, not the provider's HTTP requests: an Amadeus search is a Hotel
 List request and a Hotel Search request per twenty hotels, and the access token one more.
 
