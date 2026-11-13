@@ -1,10 +1,14 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## [Unreleased]
+
+## [1.0.0] - 2026-11-13
+
+The first stable version. It requires `omnisense/contracts` `^1.0` with no stability flag, so `composer require omnisense/omnistay` installs it in a project with Composer's default minimum-stability; the 1.x series follows semantic versioning. A tag `vX.Y.Z` is released by `.github/workflows/release.yml` once the package's CI passes on it.
 
 - Writes sent once: `Http\JsonClient` keeps the HTTP client it is given with its retries off
-  (omnisense/contracts' `Http\NoRetry`, which omnisense/contracts 1568f2c brings; with an older
-  kernel the client is kept as given), so Symfony's `RetryableHttpClient` (`framework.http_client`'s
+  (omnisense/contracts' `Http\NoRetry`, always: the fallback that kept the client as given under a
+  kernel older than 1568f2c is gone, contracts `^1.0` has it), so Symfony's `RetryableHttpClient` (`framework.http_client`'s
   `retry_failed`) never sends a booking or a cancellation twice, and a 429 reaches the provider's
   Backoff. A test client is kept as given. docs/policies.md, docs/symfony.md.
 
